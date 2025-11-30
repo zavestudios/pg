@@ -13,14 +13,14 @@ This project demonstrates secure multi-tenant isolation in PostgreSQL using:
 It uses Docker and docker-compose to start a Postgres instance and automatically initialize tenant databases. A test script verifies that tenants cannot connect to or read data from each other’s databases.
 
 ## Project Structure
-
+```
 pg-multitenant/
 ├── docker-compose.yml
 ├── init/
 │   └── 01_init_tenants.sql
 └── scripts/
     └── test_isolation.sh
-
+```
 docker-compose.yml: Starts Postgres and runs initialization scripts.
 init/01_init_tenants.sql: Creates tenant databases, roles, schemas, and privileges.
 test_isolation.sh: Tests tenant isolation.
