@@ -21,9 +21,9 @@ pg-multitenant/
 └── scripts/
     └── test_isolation.sh
 ```
-docker-compose.yml: Starts Postgres and runs initialization scripts.
-init/01_init_tenants.sql: Creates tenant databases, roles, schemas, and privileges.
-test_isolation.sh: Tests tenant isolation.
+`docker-compose.yml`: Starts Postgres and runs initialization scripts.
+`init/01_init_tenants.sql`: Creates tenant databases, roles, schemas, and privileges.
+`test_isolation.sh`: Tests tenant isolation.
 
 ## Getting Started
 
@@ -41,7 +41,7 @@ On first startup, the initialization script:
   - tenant_a_app
   - tenant_b_app
   - tenant_c_app
-- Creates a dedicated schema named app in each database
+- Creates a dedicated schema named `app` in each database
 - Locks down the public schema
 - Applies safe default privileges
 
@@ -50,22 +50,22 @@ On first startup, the initialization script:
 Each tenant receives:
 
 1. Its own database  
-   Example: db_tenant_a
+   `Example: db_tenant_a`
 
 2. Its own login role  
-   Example: tenant_a_app  
+   `Example: tenant_a_app`  
    Only this role can CONNECT to this database.
 
 3. Its own dedicated schema  
-   Example: the app schema inside db_tenant_a  
+   `Example: the app schema inside db_tenant_a`  
    Owned by the tenant role.
 
 4. A locked-down public schema  
-   The public schema is not used for tenant objects.
+   The `public` schema is not used for tenant objects.
 
-5. A safe search_path  
+5. A safe `search_path`  
    Each tenant role receives:
-       search_path = app, pg_catalog
+       `search_path = app, pg_catalog`
 
 6. Restricted default privileges  
    New tables, sequences, and functions created by the tenant are not visible to PUBLIC.
