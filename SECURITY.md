@@ -89,6 +89,8 @@ The project includes:
 
 These tests can be run in CI or as part of a deployment verification phase, and their output can be captured as evidence for ATO or security reviews.
 
+We integrate pgAudit in production to provide a complete SQL-level audit trail for each tenant. pgAudit records every security-relevant action—queries, DDL, privilege changes, failed attempts, and cross-tenant violations. Combined with our database-per-tenant and role-based isolation model, pgAudit provides provable evidence of access enforcement, least privilege, and attempted policy violations. This strengthens our multi-tenant RDS architecture and aligns with key NIST 800-53 controls (AC-3, AC-6, AU-2, AU-6) and DoD SRG requirements.
+
 ## Future Work
 
 - Add automated tests for:

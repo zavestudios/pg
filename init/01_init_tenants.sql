@@ -1,123 +1,156 @@
-#!/usr/bin/env bash
-set -euo pipefail
+-- 01_init_tenants.sql (hardened multi-tenant version, fixed table ownership)
 
-CONTAINER_NAME="pg-multitenant"
+------------------------------------------------------------
+-- 1. Create tenant roles
+------------------------------------------------------------
 
-section() {
-  echo
-  echo "---------------------------------------------------"
-  echo "$1"
-  echo "---------------------------------------------------"
-}
+CREATE ROLE tenant_a_app LOGIN PASSWORD 'tenant_a_password';
+CREATE ROLE tenant_b_app LOGIN PASSWORD 'tenant_b_password';
+CREATE ROLE tenant_c_app LOGIN PASSWORD 'tenant_c_password';
 
-echo "==================================================="
-echo "  MULTI-TENANT POSTGRES ISOLATION TEST SUITE"
-echo "==================================================="
+------------------------------------------------------------
+-- 2. Create tenant databases
+------------------------------------------------------------
 
-# -----------------------------------------------------
-# Cluster overview
-# -----------------------------------------------------
+CREATE DATABASE db_tenant_a;
+CREATE DATABASE db_tenant_b;
+CREATE DATABASE db_tenant_c;
 
-section "Cluster overview: list databases"
+------------------------------------------------------------
+-- 3. Restrict CONNECT and CREATE on tenant databases
+------------------------------------------------------------
 
-docker exec -it "$CONTAINER_NAME" \
-  psql -U postgres -c "\l"
+REVOKE CONNECT ON DATABASE db_tenant_a FROM PUBLIC;
+REVOKE CONNECT ON DATABASE db_tenant_b FROM PUBLIC;
+REVOKE CONNECT ON DATABASE db_tenant_c FROM PUBLIC;
 
-# -----------------------------------------------------
-# Schema checks per tenant DB (existence + owner)
-# -----------------------------------------------------
+GRANT CONNECT ON DATABASE db_tenant_a TO tenant_a_app;
+GRANT CONNECT ON DATABASE db_tenant_b TO tenant_b_app;
+GRANT CONNECT ON DATABASE db_tenant_c TO tenant_c_app;
 
-section "Schema layout for db_tenant_a"
+REVOKE CREATE ON DATABASE db_tenant_a FROM PUBLIC;
+REVOKE CREATE ON DATABASE db_tenant_b FROM PUBLIC;
+REVOKE CREATE ON DATABASE db_tenant_c FROM PUBLIC;
 
-docker exec -it "$CONTAINER_NAME" \
-  psql -U postgres -d db_tenant_a -c "SELECT schema_name, schema_owner FROM information_schema.schemata ORDER BY schema_name;"
+REVOKE CREATE ON DATABASE db_tenant_a FROM tenant_a_app;
+REVOKE CREATE ON DATABASE db_tenant_b FROM tenant_b_app;
+REVOKE CREATE ON DATABASE db_tenant_c FROM tenant_c_app;
 
-docker exec -it "$CONTAINER_NAME" \
-  psql -U postgres -d db_tenant_a -c "SELECT * FROM app.sample_data;"
+------------------------------------------------------------
+-- 4. Per-DB hardening and sample data
+------------------------------------------------------------
 
-section "Schema layout for db_tenant_b"
+------------------------------------------------------------
+-- Tenant A
+------------------------------------------------------------
+\connect db_tenant_a
 
-docker exec -it "$CONTAINER_NAME" \
-  psql -U postgres -d db_tenant_b -c "SELECT schema_name, schema_owner FROM information_schema.schemata ORDER BY schema_name;"
+-- 4.1 Lock down public schema
+REVOKE ALL ON SCHEMA public FROM PUBLIC;
+REVOKE ALL ON SCHEMA public FROM tenant_a_app;
 
-docker exec -it "$CONTAINER_NAME" \
-  psql -U postgres -d db_tenant_b -c "SELECT * FROM app.sample_data;"
+-- 4.2 Dedicated tenant schema "app"
+CREATE SCHEMA app AUTHORIZATION tenant_a_app;
 
-section "Schema layout for db_tenant_c"
+-- 4.3 Tenant role can use and create in its own schema
+GRANT USAGE, CREATE ON SCHEMA app TO tenant_a_app;
 
-docker exec -it "$CONTAINER_NAME" \
-  psql -U postgres -d db_tenant_c -c "SELECT schema_name, schema_owner FROM information_schema.schemata ORDER BY schema_name;"
+-- 4.4 Safe search_path
+ALTER ROLE tenant_a_app IN DATABASE db_tenant_a
+  SET search_path = app, pg_catalog;
 
-docker exec -it "$CONTAINER_NAME" \
-  psql -U postgres -d db_tenant_c -c "SELECT * FROM app.sample_data;"
+-- 4.5 Default privileges for future objects
+ALTER DEFAULT PRIVILEGES FOR ROLE tenant_a_app IN SCHEMA app
+  REVOKE ALL ON TABLES FROM PUBLIC;
+ALTER DEFAULT PRIVILEGES FOR ROLE tenant_a_app IN SCHEMA app
+  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO tenant_a_app;
 
-# -----------------------------------------------------
-# Tenant A isolation tests
-# -----------------------------------------------------
+ALTER DEFAULT PRIVILEGES FOR ROLE tenant_a_app IN SCHEMA app
+  REVOKE ALL ON SEQUENCES FROM PUBLIC;
+ALTER DEFAULT PRIVILEGES FOR ROLE tenant_a_app IN SCHEMA app
+  GRANT USAGE, SELECT ON SEQUENCES TO tenant_a_app;
 
-section "Tenant A: can connect to db_tenant_a"
+ALTER DEFAULT PRIVILEGES FOR ROLE tenant_a_app IN SCHEMA app
+  REVOKE ALL ON FUNCTIONS FROM PUBLIC;
+ALTER DEFAULT PRIVILEGES FOR ROLE tenant_a_app IN SCHEMA app
+  GRANT EXECUTE ON FUNCTIONS TO tenant_a_app;
 
-docker exec -it "$CONTAINER_NAME" \
-  psql -U tenant_a_app -d db_tenant_a -c "SELECT current_user, current_database();"
+-- 4.6 Sample table and row in app schema (owned by tenant)
+CREATE TABLE app.sample_data (
+  id   serial PRIMARY KEY,
+  note text NOT NULL
+);
+ALTER TABLE app.sample_data OWNER TO tenant_a_app;
+INSERT INTO app.sample_data (note) VALUES ('tenant A row 1');
 
-section "Tenant A: can read its own app.sample_data"
+------------------------------------------------------------
+-- Tenant B
+------------------------------------------------------------
+\connect db_tenant_b
 
-docker exec -it "$CONTAINER_NAME" \
-  psql -U tenant_a_app -d db_tenant_a -c "SELECT * FROM app.sample_data;"
+REVOKE ALL ON SCHEMA public FROM PUBLIC;
+REVOKE ALL ON SCHEMA public FROM tenant_b_app;
 
-section "Tenant A: cannot connect to db_tenant_b"
+CREATE SCHEMA app AUTHORIZATION tenant_b_app;
+GRANT USAGE, CREATE ON SCHEMA app TO tenant_b_app;
 
-set +e
-docker exec -it "$CONTAINER_NAME" \
-  psql -U tenant_a_app -d db_tenant_b -c "SELECT current_user, current_database();"
-echo "Exit code (expected non-zero): $?"
-set -e
+ALTER ROLE tenant_b_app IN DATABASE db_tenant_b
+  SET search_path = app, pg_catalog;
 
-# -----------------------------------------------------
-# Tenant B isolation tests
-# -----------------------------------------------------
+ALTER DEFAULT PRIVILEGES FOR ROLE tenant_b_app IN SCHEMA app
+  REVOKE ALL ON TABLES FROM PUBLIC;
+ALTER DEFAULT PRIVILEGES FOR ROLE tenant_b_app IN SCHEMA app
+  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO tenant_b_app;
 
-section "Tenant B: can connect to db_tenant_b"
+ALTER DEFAULT PRIVILEGES FOR ROLE tenant_b_app IN SCHEMA app
+  REVOKE ALL ON SEQUENCES FROM PUBLIC;
+ALTER DEFAULT PRIVILEGES FOR ROLE tenant_b_app IN SCHEMA app
+  GRANT USAGE, SELECT ON SEQUENCES TO tenant_b_app;
 
-docker exec -it "$CONTAINER_NAME" \
-  psql -U tenant_b_app -d db_tenant_b -c "SELECT current_user, current_database();"
+ALTER DEFAULT PRIVILEGES FOR ROLE tenant_b_app IN SCHEMA app
+  REVOKE ALL ON FUNCTIONS FROM PUBLIC;
+ALTER DEFAULT PRIVILEGES FOR ROLE tenant_b_app IN SCHEMA app
+  GRANT EXECUTE ON FUNCTIONS TO tenant_b_app;
 
-section "Tenant B: can read its own app.sample_data"
+CREATE TABLE app.sample_data (
+  id   serial PRIMARY KEY,
+  note text NOT NULL
+);
+ALTER TABLE app.sample_data OWNER TO tenant_b_app;
+INSERT INTO app.sample_data (note) VALUES ('tenant B row 1');
 
-docker exec -it "$CONTAINER_NAME" \
-  psql -U tenant_b_app -d db_tenant_b -c "SELECT * FROM app.sample_data;"
+------------------------------------------------------------
+-- Tenant C
+------------------------------------------------------------
+\connect db_tenant_c
 
-section "Tenant B: cannot connect to db_tenant_c"
+REVOKE ALL ON SCHEMA public FROM PUBLIC;
+REVOKE ALL ON SCHEMA public FROM tenant_c_app;
 
-set +e
-docker exec -it "$CONTAINER_NAME" \
-  psql -U tenant_b_app -d db_tenant_c -c "SELECT current_user, current_database();"
-echo "Exit code (expected non-zero): $?"
-set -e
+CREATE SCHEMA app AUTHORIZATION tenant_c_app;
+GRANT USAGE, CREATE ON SCHEMA app TO tenant_c_app;
 
-# -----------------------------------------------------
-# Tenant C isolation tests
-# -----------------------------------------------------
+ALTER ROLE tenant_c_app IN DATABASE db_tenant_c
+  SET search_path = app, pg_catalog;
 
-section "Tenant C: can connect to db_tenant_c"
+ALTER DEFAULT PRIVILEGES FOR ROLE tenant_c_app IN SCHEMA app
+  REVOKE ALL ON TABLES FROM PUBLIC;
+ALTER DEFAULT PRIVILEGES FOR ROLE tenant_c_app IN SCHEMA app
+  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO tenant_c_app;
 
-docker exec -it "$CONTAINER_NAME" \
-  psql -U tenant_c_app -d db_tenant_c -c "SELECT current_user, current_database();"
+ALTER DEFAULT PRIVILEGES FOR ROLE tenant_c_app IN SCHEMA app
+  REVOKE ALL ON SEQUENCES FROM PUBLIC;
+ALTER DEFAULT PRIVILEGES FOR ROLE tenant_c_app IN SCHEMA app
+  GRANT USAGE, SELECT ON SEQUENCES TO tenant_c_app;
 
-section "Tenant C: can read its own app.sample_data"
+ALTER DEFAULT PRIVILEGES FOR ROLE tenant_c_app IN SCHEMA app
+  REVOKE ALL ON FUNCTIONS FROM PUBLIC;
+ALTER DEFAULT PRIVILEGES FOR ROLE tenant_c_app IN SCHEMA app
+  GRANT EXECUTE ON FUNCTIONS TO tenant_c_app;
 
-docker exec -it "$CONTAINER_NAME" \
-  psql -U tenant_c_app -d db_tenant_c -c "SELECT * FROM app.sample_data;"
-
-section "Tenant C: cannot connect to db_tenant_a"
-
-set +e
-docker exec -it "$CONTAINER_NAME" \
-  psql -U tenant_c_app -d db_tenant_a -c "SELECT current_user, current_database();"
-echo "Exit code (expected non-zero): $?"
-set -e
-
-echo
-echo "==================================================="
-echo "  Isolation tests complete."
-echo "==================================================="
+CREATE TABLE app.sample_data (
+  id   serial PRIMARY KEY,
+  note text NOT NULL
+);
+ALTER TABLE app.sample_data OWNER TO tenant_c_app;
+INSERT INTO app.sample_data (note) VALUES ('tenant C row 1');
