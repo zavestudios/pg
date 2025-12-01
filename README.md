@@ -1,16 +1,21 @@
-# Multi-Tenant PostgreSQL Isolation Demo
+# Multi-Tenant PostgreSQL Isolation Pattern
 
-This project demonstrates secure multi-tenant isolation in PostgreSQL using:
+This project demonstrates a hardened, production-grade approach to running multiple tenants on a single PostgreSQL server while maintaining strict, testable isolation between tenants. The model is designed to be portable from local Docker development environments to AWS RDS PostgreSQL and Aurora PostgreSQL.
 
-- One Postgres server (cluster)
-- One database per tenant
-- One dedicated schema per tenant (`app`)
-- One login role per tenant
-- Strict `CONNECT` privileges
-- Locked-down `public` schema
-- Safe `search_path` settings
+The primary motivations are:
+1. Reduce infrastructure cost by consolidating tenant databases into a single RDS instance.
+2. Maintain strong tenant data isolation through PostgreSQL-native security controls.
+3. Provide compliance-ready evidence (tests, docs, audit strategy) for environments such as DoD, FedRAMP Moderate, and NIST 800-53.
+4. Prepare the configuration for full migration to Infrastructure-as-Code using Terraform.
 
-It uses Docker and docker-compose to start a PostgreSQL instance and automatically initialize tenant databases. A test script verifies that tenants cannot connect to or read data from each other’s databases.
+This repository includes:
+- A hardened tenant isolation model (database-per-tenant, role-per-tenant, dedicated schema, locked-down public schema, safe search_path, and default privilege hardening)
+- A reproducible Docker environment
+- A comprehensive test suite including both happy-path and negative “attack” tests
+- Architectural, security, compliance, and auditing documentation
+- A roadmap toward Terraform implementation and RDS deployment
+
+-----------------------------------------------------------------------
 
 ## Project Structure
 
@@ -19,82 +24,156 @@ pg-multitenant/
 ├── docker-compose.yml
 ├── init/
 │   └── 01_init_tenants.sql
-└── scripts/
-    └── test_isolation.sh
+├── scripts/
+│   ├── test_isolation.sh
+│   └── (future) test_isolation_rds.sh
+├── docs/
+│   ├── ARCHITECTURE.md
+│   ├── SECURITY.md
+│   ├── THREAT_MODEL.md
+│   ├── COMPLIANCE.md
+│   ├── COST_MODEL.md
+│   ├── PGAUDIT.md
+│   └── (future) TERRAFORM_PLAN.md
+└── README.md
 ```
 
-- `docker-compose.yml`: Starts PostgreSQL and runs initialization scripts.  
-- `init/01_init_tenants.sql`: Creates tenant databases, roles, schemas, and sample data.  
-- `scripts/test_isolation.sh`: Tests database creation, schema existence, sample data, and tenant isolation.
+-----------------------------------------------------------------------
 
-## Getting Started
+## Overview of the Isolation Model
 
-Start PostgreSQL:
+Each tenant receives:
 
-    docker compose up -d
+- A dedicated PostgreSQL database (`db_tenant_a`, `db_tenant_b`, etc.)
+- A dedicated login role (`tenant_a_app`, `tenant_b_app`)
+- A dedicated schema inside its database (`app`)
+- Exclusive access to its schema
+- No ability to connect to or view other tenant databases
+- No rights on the `public` schema
+- A controlled `search_path`: `app, pg_catalog`
+- Hardened default privileges for future objects
+- No ability to create extensions or foreign data wrappers
 
-On first startup, the initialization script:
+Admin and tenant behavior is validated through a comprehensive test suite.
 
-- Creates tenant databases: `db_tenant_a`, `db_tenant_b`, `db_tenant_c`
-- Creates tenant roles: `tenant_a_app`, `tenant_b_app`, `tenant_c_app`
-- Creates a dedicated schema named `app` in each database
-- Locks down the `public` schema
-- Applies basic privileges
-- Creates a simple table (`app.sample_data`) with one row to verify isolation behavior
+-----------------------------------------------------------------------
 
-## What the Test Script Checks
+## Running the Environment
 
-The test script (`scripts/test_isolation.sh`) performs:
+Start PostgreSQL and initialize the tenant databases:
 
-### Cluster-level checks
-- Lists all databases (`\l`) to confirm that `db_tenant_a`, `db_tenant_b`, and `db_tenant_c` exist.
+```
+docker compose up -d
+```
 
-### Per-database checks (as user `postgres`)
-- Lists schemas in each tenant database.
-- Confirms the presence of the `app` schema.
-- Shows the owner of the `app` schema.
-- Confirms that the table `app.sample_data` exists and contains the expected test row.
+Wait a few seconds for initialization to complete.
 
-### Tenant isolation checks
-- Each tenant role (e.g., `tenant_a_app`) can connect only to its own database (e.g., `db_tenant_a`).
-- Each tenant role can query only its own `app.sample_data`.
-- Each tenant role fails when attempting to connect to another tenant’s database.
-- Forbidden connections produce non-zero exit codes.
+To tear down and reset all data:
 
-Run the test suite:
+```
+docker compose down -v
+```
 
-    ./scripts/test_isolation.sh
+-----------------------------------------------------------------------
 
-Example expected failure:
+## Running the Isolation Test Suite
 
-    FATAL: permission denied for database "db_tenant_b"
-    Exit code (expected non-zero): 2
+The test script validates:
 
-## Resetting the Environment
+- Correct database creation
+- Correct schema creation
+- Ownership and privilege correctness
+- Tenant ability to access its own data
+- Negative tests (expected failures):
+  - cross-database connections
+  - attempts to create tables in the public schema
+  - attempts to create extensions (dblink)
+  - attempts to bypass search_path
+  - attempts to grant rights to other tenants
 
-To completely reset and reinitialize the PostgreSQL cluster:
+Run the full suite:
 
-    docker compose down -v
-    docker compose up -d
+```
+./scripts/test_isolation.sh
+```
 
-## Security Principles Demonstrated
+The script reports success or failure for each test and summarizes total failures at the end.
 
-- One tenant per database
-- Dedicated schema per tenant
-- Locked-down `public` schema
-- Minimal privileges
-- Safe `search_path`
-- Controlled schema ownership
-- No cross-database tenant access
+-----------------------------------------------------------------------
 
-This pattern is suitable for local development and for production deployments such as AWS RDS PostgreSQL and Aurora PostgreSQL.
+## Documentation
 
-## Future Improvements
+Detailed design, security, and compliance documentation is available under `docs/`.
 
-Possible enhancements:
+- `docs/ARCHITECTURE.md`  
+  High-level design of the multi-tenant PostgreSQL model.
 
-- Add stronger hardening using `ALTER DEFAULT PRIVILEGES`
-- Add Terraform modules to deploy the model on AWS RDS
-- Integrate pgAudit for auditing DDL and role changes
-- Add negative tests for `search_path`, extension creation, and FDW creation
-- Add an application layer to demonstrate real tenant-bound query paths
+- `docs/SECURITY.md`  
+  Security controls (access control, schema isolation, privileges).
+
+- `docs/THREAT_MODEL.md`  
+  Threat modeling for tenant isolation and boundary enforcement.
+
+- `docs/COMPLIANCE.md`  
+  Mapping of the model to NIST 800-53, FedRAMP Moderate, and DoD SRG controls.
+
+- `docs/COST_MODEL.md`  
+  Cost comparison between per-tenant RDS vs. multi-tenant RDS.
+
+- `docs/PGAUDIT.md`  
+  Audit strategy for production deployments using pgAudit with RDS.
+
+These documents serve as a reference implementation for building secure, compliant tenant-isolated database platforms.
+
+-----------------------------------------------------------------------
+
+## Roadmap
+
+Planned next steps include:
+
+1. Terraform Migration  
+   Convert the SQL-based tenant configuration into Terraform resources using:
+   - `postgresql_database`
+   - `postgresql_role`
+   - `postgresql_schema`
+   - `postgresql_grant`
+   - `postgresql_default_privileges`
+
+2. AWS Deployment  
+   Introduce RDS or Aurora PostgreSQL infrastructure using Terraform.
+   Configure:
+   - Parameter groups (pgAudit, logging, settings)
+   - Security groups and networking
+   - KMS encryption
+   - Backup and snapshot policies
+
+3. CI/CD Integration  
+   Use GitLab CI/CD to:
+   - Run the full Docker test suite on each merge request
+   - Execute terraform plan/apply pipelines
+   - Add optional post-deploy verification tests against RDS
+
+4. pgAudit Integration in Production  
+   Enable pgAudit via RDS parameter groups and surface logs to CloudWatch/SIEM.
+
+5. Tenant Onboarding Automation  
+   Drive new tenant creation entirely through Terraform modules and CI/CD workflows.
+
+-----------------------------------------------------------------------
+
+## Purpose and Use Cases
+
+This repository can serve as:
+
+- A reference design for multi-tenant PostgreSQL
+- A foundation for platform engineering patterns in DoD environments
+- A compliance-ready data isolation model
+- A cost-optimization model for consolidating RDS instances
+- A training or demonstration environment for DB security and hardening
+- A basis for Terraform-based production infrastructure
+
+-----------------------------------------------------------------------
+
+## License
+
+Choose any license you prefer. By default this project may be considered MIT unless otherwise noted.
