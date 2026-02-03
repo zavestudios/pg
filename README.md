@@ -173,6 +173,22 @@ This repository can serve as:
 
 -----------------------------------------------------------------------
 
+## Production Use on ZaveStudios Platform
+
+This multi-tenant PostgreSQL pattern is used in production on the 
+[ZaveStudios platform](link), serving 3 tenant applications:
+
+- **panchito**: Python ETL service for real estate data
+- **thehouseguy**: Rails real estate listing application  
+- **rigoberta**: Rails reference template with demo data
+
+Each tenant has:
+- Dedicated database (db_panchito, db_thehouseguy, db_rigoberta)
+- Isolated schema with dedicated role
+- Tested security boundaries (no cross-tenant access)
+
+See [ZaveStudios architecture](link) for overall platform design.
+
 ## License
 
 Choose any license you prefer. By default this project may be considered MIT unless otherwise noted.
