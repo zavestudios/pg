@@ -87,9 +87,15 @@ The test script validates:
 - Negative tests (expected failures):
   - cross-database connections
   - attempts to create tables in the public schema
-  - attempts to create extensions (dblink)
+  - attempts to create extensions (dblink, postgres_fdw, file_fdw)
   - attempts to bypass search_path
   - attempts to grant rights to other tenants
+  - privilege escalation attempts (ALTER ROLE, CREATE ROLE, SET ROLE)
+  - database object manipulation (DROP DATABASE, ALTER DATABASE, CREATE DATABASE)
+  - filesystem access attempts (COPY TO/FROM, pg_read_file, pg_ls_dir)
+  - information disclosure attacks (pg_shadow, pg_authid, cross-tenant pg_stat_activity)
+  - malicious function creation (SECURITY DEFINER, pg_catalog functions)
+  - tablespace creation attempts
 
 Run the full suite:
 

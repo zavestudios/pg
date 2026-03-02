@@ -130,6 +130,73 @@ section "Operational Guardrails"
 run_expect_fail "Tenant A: statement_timeout enforced (pg_sleep should be canceled)" \
   psql_tenant_a -d db_tenant_a -c "SELECT pg_sleep(10);"
 
+section "Additional Security Tests (Tenant A)"
+
+# Privilege escalation attempts
+run_expect_fail "Tenant A: cannot ALTER ROLE to gain superuser" \
+  psql_tenant_a -d db_tenant_a -c "ALTER ROLE tenant_a_app SUPERUSER;"
+
+run_expect_fail "Tenant A: cannot CREATE ROLE" \
+  psql_tenant_a -d db_tenant_a -c "CREATE ROLE malicious_role;"
+
+run_expect_fail "Tenant A: cannot ALTER ROLE for other users" \
+  psql_tenant_a -d db_tenant_a -c "ALTER ROLE tenant_b_app PASSWORD 'hacked';"
+
+run_expect_fail "Tenant A: cannot SET ROLE to impersonate other tenants" \
+  psql_tenant_a -d db_tenant_a -c "SET ROLE tenant_b_app;"
+
+# Database object manipulation
+run_expect_fail "Tenant A: cannot DROP other tenants' databases" \
+  psql_tenant_a -d db_tenant_a -c "DROP DATABASE db_tenant_b;"
+
+run_expect_fail "Tenant A: cannot ALTER DATABASE settings for other tenants" \
+  psql_tenant_a -d db_tenant_a -c "ALTER DATABASE db_tenant_b SET timezone = 'UTC';"
+
+run_expect_fail "Tenant A: cannot CREATE DATABASE" \
+  psql_tenant_a -d db_tenant_a -c "CREATE DATABASE malicious_db;"
+
+# Additional extension and filesystem attacks
+run_expect_fail "Tenant A: cannot create postgres_fdw extension" \
+  psql_tenant_a -d db_tenant_a -c "CREATE EXTENSION postgres_fdw;"
+
+run_expect_fail "Tenant A: cannot create file_fdw extension" \
+  psql_tenant_a -d db_tenant_a -c "CREATE EXTENSION file_fdw;"
+
+run_expect_fail "Tenant A: cannot use COPY TO file system" \
+  psql_tenant_a -d db_tenant_a -c "COPY app.sample_data TO '/tmp/data_exfil.csv';"
+
+run_expect_fail "Tenant A: cannot use COPY FROM file system" \
+  psql_tenant_a -d db_tenant_a -c "COPY app.sample_data FROM '/etc/passwd';"
+
+# Information disclosure
+run_expect_fail "Tenant A: cannot query pg_shadow to see passwords" \
+  psql_tenant_a -d db_tenant_a -c "SELECT * FROM pg_shadow;"
+
+run_expect_fail "Tenant A: cannot query pg_authid to see passwords" \
+  psql_tenant_a -d db_tenant_a -c "SELECT * FROM pg_authid;"
+
+run_test "Tenant A: cannot see other-tenant sessions in pg_stat_activity" \
+  bash -c "
+    psql_tenant_a -d db_tenant_a -Atc \"SELECT count(*) FROM pg_stat_activity WHERE datname = 'db_tenant_b';\" | grep -qx '0'
+  "
+
+# Function/procedure security
+run_expect_fail "Tenant A: cannot create SECURITY DEFINER function to escalate privileges" \
+  psql_tenant_a -d db_tenant_a -c "CREATE FUNCTION app.escalate() RETURNS void SECURITY DEFINER AS \$\$ DROP DATABASE db_tenant_b; \$\$ LANGUAGE SQL;"
+
+run_expect_fail "Tenant A: cannot create functions in pg_catalog" \
+  psql_tenant_a -d db_tenant_a -c "CREATE FUNCTION pg_catalog.malicious() RETURNS void AS \$\$ SELECT 1; \$\$ LANGUAGE SQL;"
+
+# Tablespace and file system
+run_expect_fail "Tenant A: cannot create tablespaces" \
+  psql_tenant_a -d db_tenant_a -c "CREATE TABLESPACE malicious_ts LOCATION '/tmp';"
+
+run_expect_fail "Tenant A: cannot use pg_read_file() admin function" \
+  psql_tenant_a -d db_tenant_a -c "SELECT pg_read_file('/etc/passwd');"
+
+run_expect_fail "Tenant A: cannot use pg_ls_dir() admin function" \
+  psql_tenant_a -d db_tenant_a -c "SELECT pg_ls_dir('/etc');"
+
 section "Connection Limit Enforcement"
 
 # This test assumes you've set a low per-role CONNECTION LIMIT for tenant_a_app
