@@ -74,3 +74,5 @@ __pycache__/
 # -------------
 test-results.txt
 CLAUDE.md
+AGENTS.md
+strict-audit
