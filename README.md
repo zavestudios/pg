@@ -2,6 +2,8 @@
 
 This project demonstrates a hardened, production-grade approach to running multiple tenants on a single PostgreSQL server while maintaining strict, testable isolation between tenants. The model is designed to be portable from local Docker development environments to AWS RDS PostgreSQL and Aurora PostgreSQL.
 
+Repository Category: `platform-service` (see `platform-docs/_platform/REPO_TAXONOMY.md`)
+
 The primary motivations are:
 1. Reduce infrastructure cost by consolidating tenant databases into a single RDS instance.
 2. Maintain strong tenant data isolation through PostgreSQL-native security controls.
@@ -104,6 +106,7 @@ The script reports success or failure for each test and summarizes total failure
 ## Documentation
 
 Detailed design, security, and compliance documentation is available under `docs/`.
+Platform-wide governance, contract schema, lifecycle, and doctrine remain authoritative in `platform-docs/_platform/`.
 
 - `docs/ARCHITECTURE.md`  
   High-level design of the multi-tenant PostgreSQL model.
@@ -150,13 +153,13 @@ Planned next steps include:
    The PostgreSQL provider will then target the RDS endpoint to apply the same tenant isolation model used in the local Docker environment.
 
 3. CI/CD Integration  
-   Use GitLab CI/CD to:
+   Use GitHub Actions and shared platform workflows to:
    - Run the Docker-based isolation tests on each merge request
    - Execute Terraform `plan` for review
    - Execute Terraform `apply` on protected branches
    - Optionally run a post-deploy verification test suite against RDS
 
-4. pgAudit Integra
+4. pgAudit Integration
 
 -----------------------------------------------------------------------
 
