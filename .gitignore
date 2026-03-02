@@ -68,3 +68,9 @@ __pycache__/
 *.tfstate
 *.tfstate.*
 .terraform/
+
+# -------------
+# Test results
+# -------------
+test-results.txt
+CLAUDE.md

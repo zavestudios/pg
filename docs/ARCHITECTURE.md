@@ -43,6 +43,49 @@ Relationships:
 - The role owns or is granted access to the tenant’s `app` schema.
 - No tenant role has permissions on another tenant’s database or schema.
 
+### Architecture Diagram
+
+```mermaid
+flowchart TD
+
+    subgraph Instance[PostgreSQL Instance]
+        A[db_tenant_a]
+        B[db_tenant_b]
+        C[db_tenant_c]
+    end
+
+    subgraph Schemas
+        SA[db_tenant_a.app]
+        SB[db_tenant_b.app]
+        SC[db_tenant_c.app]
+    end
+
+    subgraph Roles
+        RA[tenant_a_app<br/>LOGIN ROLE]
+        RB[tenant_b_app<br/>LOGIN ROLE]
+        RC[tenant_c_app<br/>LOGIN ROLE]
+        RO[platform_owner<br/>NOLOGIN ROLE]
+    end
+
+    %% Ownership
+    RO --> SA
+    RO --> SB
+    RO --> SC
+
+    %% Grant model
+    RA -->|USAGE + CRUD| SA
+    RB -->|USAGE + CRUD| SB
+    RC -->|USAGE + CRUD| SC
+
+    %% Isolation boundaries
+    RA -..->|NO ACCESS| SB
+    RA -..->|NO ACCESS| SC
+    RB -..->|NO ACCESS| SA
+    RB -..->|NO ACCESS| SC
+    RC -..->|NO ACCESS| SA
+    RC -..->|NO ACCESS| SB
+```
+
 ## Example Mapping: Local Docker to AWS RDS
 
 Local development:
